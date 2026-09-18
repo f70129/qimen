@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>奇門遁甲 - 定局與陽宅指南</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Using lunar-javascript for precise Chinese astronomical calculations (Solar Terms, Ganzhi) -->
+    <script src="https://unpkg.com/lunar-javascript/lunar.js"></script>
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        qimen: {
+                            dark: '#0f172a',
+                            panel: '#1e293b',
+                            gold: '#fbbf24',
+                            red: '#ef4444',
+                            blue: '#3b82f6',
+                            text: '#f8fafc'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['"Noto Sans TC"', 'system-ui', 'sans-serif'],
+                        serif: ['"Noto Serif TC"', 'Georgia', 'serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Noto+Serif+TC:wght@400;700&display=swap');
+        
+        body {
+            background-color: #020617;
+            background-image: radial-gradient(circle at 50% 0%, #1e293b 0%, #020617 70%);
+            color: #f8fafc;
+            min-height: 100vh;
+            font-family: 'Noto Sans TC', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .palace-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            gap: 0.4rem;
+            width: 100%;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        /* Standard Bagua layout: South top, North bottom */
+        .palace-4 { grid-area: 1 / 1 / 2 / 2; } /* SE */
+        .palace-9 { grid-area: 1 / 2 / 2 / 3; } /* S */
+        .palace-2 { grid-area: 1 / 3 / 2 / 4; } /* SW */
+        
+        .palace-3 { grid-area: 2 / 1 / 3 / 2; } /* E */
+        .palace-5 { grid-area: 2 / 2 / 3 / 3; } /* Center */
+        .palace-7 { grid-area: 2 / 3 / 3 / 4; } /* W */
+        
+        .palace-8 { grid-area: 3 / 1 / 4 / 2; } /* NE */
+        .palace-1 { grid-area: 3 / 2 / 4 / 3; } /* N */
+        .palace-6 { grid-area: 3 / 3 / 4 / 4; } /* NW */
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.75);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const TERM_DATA = {
+            "冬至": { dun: "陽", palace: 1, baseJu: 1 }, "小寒": { dun: "陽", palace: 1, baseJu: 2 }, "大寒": { dun: "陽", palace: 1, baseJu: 3 },
+            "立春": { dun: "陽", palace: 8, baseJu: 8 }, "雨水": { dun: "陽", palace: 8, baseJu: 9 }, "驚蟄": { dun: "陽", palace: 8, baseJu: 1 },
+            "春分": { dun: "陽", palace: 3, baseJu: 3 }, "清明": { dun: "陽", palace: 3, baseJu: 4 }, "穀雨": { dun: "陽", palace: 3, baseJu: 5 },
+            "立夏": { dun: "陽", palace: 4, baseJu: 4 }, "小滿": { dun: "陽", palace: 4, baseJu: 5 }, "芒種": { dun: "陽", palace: 4, baseJu: 6 },
+            "夏至": { dun: "陰", palace: 9, baseJu: 9 }, "小暑": { dun: "陰", palace: 9, baseJu: 8 }, "大暑": { dun: "陰", palace: 9, baseJu: 7 },
+            "立秋": { dun: "陰", palace: 2, baseJu: 2 }, "處暑": { dun: "陰", palace: 2, baseJu: 1 }, "白露": { dun: "陰", palace: 2, baseJu: 9 },
+            "秋分": { dun: "陰", palace: 7, baseJu: 7 }, "寒露": { dun: "陰", palace: 7, baseJu: 6 }, "霜降": { dun: "陰", palace: 7, baseJu: 5 },
+            "立冬": { dun: "陰", palace: 6, baseJu: 6 }, "小雪": { dun: "陰", palace: 6, baseJu: 5 }, "大雪": { dun: "陰", palace: 6, baseJu: 4 }
+        };
+
+        const BAGUA_DATA = {
+            1: { name: '坎 (北)', element: '水', color: 'bg-blue-900', zhai: '中男 / 事業發展、人際交流、財富匯聚', setup: '魚缸、流水盆、保險箱、黑色/藍色物品', avoid: '過多土栽植物、大型木製傢俱、黃色地毯' },
+            2: { name: '坤 (西南)', element: '土', color: 'bg-yellow-900', zhai: '老母 / 婚姻情感、包容力、房地產', setup: '陶瓷藝品、紫水晶、地毯、方形擺設', avoid: '大量金屬物品、木製雕刻、綠色植物' },
+            3: { name: '震 (東)', element: '木', color: 'bg-emerald-900', zhai: '長男 / 健康活力、事業開創、名聲', setup: '綠色植物(闊葉)、木製家具、山水字畫', avoid: '金屬刀劍、過多白色裝飾、風鈴' },
+            4: { name: '巽 (東南)', element: '木', color: 'bg-emerald-800', zhai: '長女 / 考試文昌、貴人、遠方財', setup: '富貴竹(四枝)、毛筆、文昌塔、木雕', avoid: '雜物堆積、金屬風鈴、金屬剪刀' },
+            5: { name: '中宮', element: '土', color: 'bg-gray-800', zhai: '核心 / 整體宅運樞紐，宜靜不宜動', setup: '保持明亮整潔、開闊空曠、黃水晶球', avoid: '大型重物壓迫、垃圾桶、魚缸、樓梯' },
+            6: { name: '乾 (西北)', element: '金', color: 'bg-slate-700', zhai: '老父 / 權力威望、貴人提攜、領導力', setup: '金屬保險箱、圓形金屬鐘、銅馬、黃色物品', avoid: '爐灶(火燒天門)、紅色裝飾、熱水器' },
+            7: { name: '兌 (西)', element: '金', color: 'bg-slate-600', zhai: '少女 / 喜悅桃花、口才表達、偏財', setup: '音響、樂器、銅製擺件、白色水晶', avoid: '紅色物品、尖銳植物、爐火' },
+            8: { name: '艮 (東北)', element: '土', color: 'bg-yellow-800', zhai: '少男 / 儲蓄守財、子嗣、轉折變革', setup: '石雕、陶瓷、保險櫃、假山造景', avoid: '大樹盆栽、綠色地毯、木製屏風' },
+            9: { name: '離 (南)', element: '火', color: 'bg-red-900', zhai: '中女 / 靈感創意、知名度、喜慶', setup: '紅色擺設、漂亮燈飾、爐灶、電子產品', avoid: '大型魚缸、黑色/藍色物品、漏水水龍頭' }
+        };
+
+        const wrap9 = (num) => ((num - 1) % 9 + 9) % 9 + 1;
+
+        function calculateQiMen(dateObj) {
+            try {
+                const lunar = Lunar.fromDate(dateObj);
+                const jieQiObj = lunar.getPrevJieQi(true);
+                const termName = jieQiObj.getName();
+                const termData = TERM_DATA[termName];
+
+                const dayGanzhi = lunar.getDayInGanZhiExact();
+                let tempLunar = lunar;
+                let fuTouDate = tempLunar;
+                let steps = 0;
+                while (steps < 15) {
+                    const g = tempLunar.getDayInGanZhiExact().substring(0,1);
+                    if (g === '甲' || g === '己') {
+                        fuTouDate = tempLunar;
+                        break;
+                    }
+                    const prevDate = new Date(tempLunar.getSolar().getYear(), tempLunar.getSolar().getMonth() - 1, tempLunar.getSolar().getDay() - 1);
+                    tempLunar = Lunar.fromDate(prevDate);
+                    steps++;
+                }
+
+                const fuTouZhi = fuTouDate.getDayInGanZhiExact().substring(1, 2);
+                let yuanName = '';
+                let yuanOffsetMultiplier = 0;
+
+                if (['子', '午', '卯', '酉'].includes(fuTouZhi)) {
+                    yuanName = '上元';
+                    yuanOffsetMultiplier = 0;
+                } else if (['寅', '申', '巳', '亥'].includes(fuTouZhi)) {
+                    yuanName = '中元';
+                    yuanOffsetMultiplier = 1;
+                } else {
+                    yuanName = '下元';
+                    yuanOffsetMultiplier = 2;
+                }
+
+                let finalJu = termData.baseJu;
+                if (termData.dun === '陽') {
+                    finalJu = wrap9(termData.baseJu + (5 * yuanOffsetMultiplier));
+                } else {
+                    finalJu = wrap9(termData.baseJu - (5 * yuanOffsetMultiplier));
+                }
+
+                const timeGanZhi = lunar.getTimeInGanZhi();
+                const timeZhi = lunar.getTimeZhi();
+                const timeYi = lunar.getTimeYi().join('、') || '無特別宜事';
+                const timeJi = lunar.getTimeJi().join('、') || '無特別忌諱';
+                
+                const dirCai = lunar.getDayPositionCaiDesc();
+                const dirXi = lunar.getDayPositionXiDesc();
+                const dirGui = lunar.getDayPositionYangGuiDesc();
+
+                const goodHours = [];
+                const zhiMap = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
+                const baseDate = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
+                const hoursToCheck = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22];
+                
+                for(let i=0; i<12; i++) {
+                    let tempDate = new Date(baseDate.getTime() + hoursToCheck[i] * 60 * 60 * 1000);
+                    let tempLunar = Lunar.fromDate(tempDate);
+                    try {
+                        if (tempLunar.getTimeTianShenType() === '黃道') {
+                            goodHours.push(zhiMap[i] + '時');
+                        }
+                    } catch (e) {}
+                }
+
+                return {
+                    solarTerm: termName,
+                    termTime: jieQiObj.getSolar().toYmdHms(),
+                    dayGanzhi: dayGanzhi,
+                    fuTou: fuTouDate.getDayInGanZhiExact(),
+                    yuan: yuanName,
+                    dun: termData.dun,
+                    palace: termData.palace,
+                    ju: finalJu,
+                    timeGanZhi: timeGanZhi,
+                    timeZhi: timeZhi,
+                    timeYi: timeYi,
+                    timeJi: timeJi,
+                    dirCai: dirCai,
+                    dirXi: dirXi,
+                    dirGui: dirGui,
+                    goodHours: goodHours.length > 0 ? goodHours.join('、') : '今日無特別大吉之時',
+                    success: true
+                };
+            } catch (e) {
+                console.error("Calculation error:", e);
+                return { success: false, error: e.message };
+            }
+        }
+
+        const Modal = ({ isOpen, onClose, title, children }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={onClose}>
+                    <div className="glass-panel p-5 rounded-2xl max-w-sm w-full shadow-2xl relative border border-gray-600 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-white p-2">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                        <h3 className="text-lg font-serif font-bold text-qimen-gold mb-3 pr-8">{title}</h3>
+                        <div className="text-gray-200 text-xs sm:text-sm leading-relaxed space-y-3">
+                            {children}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const GuideTab = () => (
+            <div className="space-y-4 animate-fade-in pb-6">
+                <div className="glass-panel p-4 rounded-xl border-t-4 border-blue-500">
+                    <h3 className="text-base font-serif font-bold text-white mb-2 flex items-center">
+                        <span className="text-blue-400 mr-2">📖</span> 什麼是奇門遁甲？
+                    </h3>
+                    <div className="text-gray-300 text-xs sm:text-sm space-y-2 leading-relaxed">
+                        <p>奇門遁甲如同生活中的<strong className="text-qimen-gold">「決策地圖」與「時空天氣預報」</strong>。</p>
+                        <p>教導我們在正確的時間、前往正確的方位、做正確的事，掌握局勢主動權。</p>
+                    </div>
+                </div>
+
+                <div className="glass-panel p-4 rounded-xl border-t-4 border-emerald-500">
+                    <h3 className="text-base font-serif font-bold text-white mb-2 flex items-center">
+                        <span className="text-emerald-500 mr-2">🛠️</span> 手機版操作指南
+                    </h3>
+                    <div className="space-y-3 text-xs sm:text-sm text-gray-300">
+                        <div className="bg-qimen-dark/60 p-3 rounded-lg border border-gray-700">
+                            <h4 className="font-bold text-white mb-1">1. 📅 起局推演</h4>
+                            <p>輸入您想問事、出行或決策的時間，系統將精確計算當時的陰陽遁、局數與時空行動指南。</p>
+                        </div>
+                        <div className="bg-qimen-dark/60 p-3 rounded-lg border border-gray-700">
+                            <h4 className="font-bold text-white mb-1">2. ⏱️ 時空架構</h4>
+                            <p>顯示目前的節氣磁場，高亮顯示目前落宮，讓您隨時感知大自然能量運行。</p>
+                        </div>
+                        <div className="bg-qimen-dark/60 p-3 rounded-lg border border-gray-700">
+                            <h4 className="font-bold text-white mb-1">3. 🧭 陽宅方位</h4>
+                            <p>透過中心立極法與居家平面圖，輕鬆掌握家裡的吉凶方位與開運佈置。</p>
+                        </div>
+                        <div className="bg-qimen-dark/60 p-3 rounded-lg border border-gray-700">
+                            <h4 className="font-bold text-white mb-1">4. 📈 股市決策</h4>
+                            <p>結合陰陽遁大勢與時辰宜忌，作為金融操作與情緒管理的輔助利器。</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="glass-panel p-4 rounded-xl border-t-4 border-qimen-gold">
+                    <h3 className="text-base font-serif font-bold text-white mb-2 flex items-center">
+                        <span className="text-qimen-gold mr-2">📈</span> 實戰應用：股票投資的進出場
+                    </h3>
+                    <div className="text-gray-300 text-xs sm:text-sm space-y-2 leading-relaxed">
+                        <p>奇門遁甲在現代最廣泛的應用之一即為<strong className="text-white">金融投資與商業決策</strong>：</p>
+                        <ul className="list-disc list-inside space-y-1 text-gray-300">
+                            <li><strong>下單前看天氣</strong>：點開「起局推演」或「股市」，檢查當下時辰是否忌諱求財或交易，避開情緒衝動期。</li>
+                            <li><strong>面向財神下單</strong>：盯盤時盡量將座位或手機面向當日的「財神方位」，有助於沉澱心神。</li>
+                            <li><strong>順應大循環</strong>：陽遁期間市場易偏向多頭樂觀；陰遁期間市場易偏向保守震盪。</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        );
+
+        const CalculatorTab = () => {
+            const [dateInput, setDateInput] = React.useState(() => {
+                const now = new Date();
+                return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+            });
+            const [result, setResult] = React.useState(null);
+
+            React.useEffect(() => {
+                const dateObj = new Date(dateInput);
+                if (!isNaN(dateObj.getTime())) {
+                    setResult(calculateQiMen(dateObj));
+                }
+            }, [dateInput]);
+
+            return (
+                <div className="space-y-4 animate-fade-in pb-6">
+                    <div className="glass-panel p-4 rounded-xl">
+                        <label className="block text-xs font-medium text-gray-400 mb-2">選擇預測時間 (精確至分鐘以判定交節)</label>
+                        <input 
+                            type="datetime-local" 
+                            value={dateInput}
+                            onChange={(e) => setDateInput(e.target.value)}
+                            className="w-full bg-qimen-dark border border-gray-600 rounded-lg p-3 text-white text-sm focus:outline-none focus:border-qimen-gold"
+                        />
+                    </div>
+
+                    {result && result.success ? (
+                        <div className="glass-panel p-4 sm:p-5 rounded-xl space-y-4 border-t-4 border-qimen-gold">
+                            <div className="text-center pb-3 border-b border-gray-700">
+                                <h2 className="text-2xl font-serif font-bold tracking-widest text-white mb-1">
+                                    {result.dun}遁 {result.ju} 局
+                                </h2>
+                                <p className="text-qimen-gold text-sm">{result.solarTerm} • {result.yuan}</p>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div className="bg-qimen-dark/60 p-2.5 rounded-lg">
+                                    <span className="text-gray-400 block mb-0.5">交節時間</span>
+                                    <span className="font-mono text-white text-[11px]">{result.termTime}</span>
+                                </div>
+                                <div className="bg-qimen-dark/60 p-2.5 rounded-lg">
+                                    <span className="text-gray-400 block mb-0.5">日干支</span>
+                                    <span className="text-white text-sm font-bold">{result.dayGanzhi}</span>
+                                </div>
+                                <div className="bg-qimen-dark/60 p-2.5 rounded-lg">
+                                    <span className="text-gray-400 block mb-0.5">三元符頭</span>
+                                    <span className="text-white">{result.fuTou}</span>
+                                </div>
+                                <div className="bg-qimen-dark/60 p-2.5 rounded-lg">
+                                    <span className="text-gray-400 block mb-0.5">定局落宮</span>
+                                    <span className="text-white">宮位 {result.palace}</span>
+                                </div>
+                            </div>
+                            
+                            <div className="bg-blue-900/20 border border-blue-800/50 p-3 rounded-lg text-xs text-blue-200">
+                                <strong className="text-blue-300">時空運算邏輯：</strong><br/>
+                                • 所屬節氣：<strong>{result.solarTerm}</strong> ({result.dun}遁)<br/>
+                                • 日柱符頭：<strong>{result.fuTou}</strong> ({result.yuan})
+                            </div>
+                            
+                            <div className="bg-gray-800/90 border border-gray-600 p-4 rounded-lg text-xs space-y-3">
+                                <h3 className="font-serif font-bold text-qimen-gold text-sm border-b border-gray-700 pb-1.5 flex items-center">
+                                    <span>🎯 時空行動指南</span>
+                                </h3>
+                                
+                                <div>
+                                    <span className="text-gray-400 block mb-1">當下時段 ({result.timeGanZhi}時)</span>
+                                    <div className="space-y-1.5">
+                                        <div className="bg-emerald-900/30 border border-emerald-800/50 p-2 rounded flex">
+                                            <span className="text-emerald-400 font-bold mr-2">宜</span>
+                                            <span className="text-gray-200">{result.timeYi}</span>
+                                        </div>
+                                        <div className="bg-red-900/30 border border-red-800/50 p-2 rounded flex">
+                                            <span className="text-red-400 font-bold mr-2">忌</span>
+                                            <span className="text-gray-200">{result.timeJi}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <span className="text-gray-400 block mb-1">今日黃道吉時</span>
+                                    <div className="text-qimen-gold bg-qimen-dark p-2 rounded font-medium">
+                                        {result.goodHours}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <span className="text-gray-400 block mb-1.5">今日吉利方位</span>
+                                    <div className="grid grid-cols-3 gap-1.5 text-center">
+                                        <div className="bg-orange-900/40 border border-orange-800/50 p-1.5 rounded">
+                                            <span className="block text-orange-400 text-[10px]">財神</span>
+                                            <span className="text-white font-bold">{result.dirCai}</span>
+                                        </div>
+                                        <div className="bg-pink-900/40 border border-pink-800/50 p-1.5 rounded">
+                                            <span className="block text-pink-400 text-[10px]">喜神</span>
+                                            <span className="text-white font-bold">{result.dirXi}</span>
+                                        </div>
+                                        <div className="bg-blue-900/40 border border-blue-800/50 p-1.5 rounded">
+                                            <span className="block text-blue-400 text-[10px]">貴人</span>
+                                            <span className="text-white font-bold">{result.dirGui}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="glass-panel p-5 rounded-xl text-center text-red-400 text-sm">
+                            時間計算錯誤或超出範圍。
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const TheoryTab = () => {
+            const [currentInfo, setCurrentInfo] = React.useState({ term: '', palace: null, yi: '', ji: '' });
+
+            React.useEffect(() => {
+                try {
+                    const now = new Date();
+                    const lunar = Lunar.fromDate(now);
+                    const jieQiObj = lunar.getPrevJieQi(true);
+                    const termName = jieQiObj.getName();
+                    const timeYi = lunar.getTimeYi().join('、') || '無特別宜事';
+                    const timeJi = lunar.getTimeJi().join('、') || '無特別忌諱';
+                    
+                    if (TERM_DATA[termName]) {
+                        setCurrentInfo({ 
+                            term: termName, 
+                            palace: TERM_DATA[termName].palace,
+                            yi: timeYi,
+                            ji: timeJi
+                        });
+                    }
+                } catch (e) {
+                    console.error("載入目前節氣失敗:", e);
+                }
+            }, []);
+
+            return (
+                <div className="space-y-4 animate-fade-in pb-6">
+                    <div className="glass-panel p-4 rounded-xl text-xs sm:text-sm text-gray-300 leading-relaxed">
+                        <h3 className="font-serif font-bold text-qimen-gold mb-2 border-b border-gray-700 pb-1.5 flex items-center">
+                            <span>🧩 什麼是時空架構？</span>
+                        </h3>
+                        <p className="mb-2">奇門遁甲將<strong className="text-white">時間（24節氣）</strong>與<strong className="text-white">空間（9個方位）</strong>結合。九宮格即是一個「年度能量時鐘」。</p>
+                        
+                        <div className="grid grid-cols-1 gap-2 mt-3">
+                            <div className="bg-red-900/25 p-2.5 rounded-lg border border-red-900/50 text-xs">
+                                <strong className="text-red-400 block mb-0.5">☀️ 陽遁 (冬至➔芒種)：</strong>
+                                白天漸長，能量生發擴張。局數順時針遞增。
+                            </div>
+                            <div className="bg-blue-900/25 p-2.5 rounded-lg border border-blue-900/50 text-xs">
+                                <strong className="text-blue-400 block mb-0.5">🌙 陰遁 (夏至➔大雪)：</strong>
+                                白天漸短，能量收斂內縮。局數逆時針遞減。
+                            </div>
+                        </div>
+                    </div>
+
+                    {currentInfo.term && (
+                        <div className="bg-qimen-dark/95 border border-qimen-gold/60 p-4 rounded-xl shadow-lg space-y-2">
+                            <div className="flex items-center justify-between border-b border-gray-700 pb-2">
+                                <span className="text-qimen-gold font-bold text-xs flex items-center">
+                                    <span>⏱️ 目前時空磁場：</span>
+                                </span>
+                                <span className="text-white bg-black/60 px-2.5 py-1 rounded text-xs border border-qimen-gold/40">
+                                    {currentInfo.term} (落於 {BAGUA_DATA[currentInfo.palace]?.name.split(' ')[0]}宮)
+                                </span>
+                            </div>
+                            <div className="space-y-1.5 text-xs">
+                                <div className="bg-emerald-900/30 border border-emerald-800/50 p-2 rounded flex">
+                                    <span className="text-emerald-400 font-bold mr-2">宜</span>
+                                    <span className="text-gray-200">{currentInfo.yi}</span>
+                                </div>
+                                <div className="bg-red-900/30 border border-red-800/50 p-2 rounded flex">
+                                    <span className="text-red-400 font-bold mr-2">忌</span>
+                                    <span className="text-gray-200">{currentInfo.ji}</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="palace-grid">
+                        {[4, 9, 2, 3, 5, 7, 8, 1, 6].map(num => {
+                            const isYang = [1, 8, 3, 4].includes(num);
+                            const isCurrent = num === currentInfo.palace;
+                            
+                            let terms = "";
+                            let dunLabel = "";
+                            let bgClass = "bg-gray-800";
+                            
+                            if (num === 4) { terms = "立夏 小滿 芒種"; dunLabel = "陽遁"; bgClass = "bg-red-900/40"; }
+                            if (num === 9) { terms = "夏至 小暑 大暑"; dunLabel = "陰遁"; bgClass = "bg-blue-900/40"; }
+                            if (num === 2) { terms = "立秋 處暑 白露"; dunLabel = "陰遁"; bgClass = "bg-blue-900/40"; }
+                            if (num === 3) { terms = "春分 清明 穀雨"; dunLabel = "陽遁"; bgClass = "bg-red-900/40"; }
+                            if (num === 5) { terms = "中宮"; dunLabel = ""; bgClass = "bg-slate-800 border-dashed"; }
+                            if (num === 7) { terms = "秋分 寒露 霜降"; dunLabel = "陰遁"; bgClass = "bg-blue-900/40"; }
+                            if (num === 8) { terms = "立春 雨水 驚蟄"; dunLabel = "陽遁"; bgClass = "bg-red-900/40"; }
+                            if (num === 1) { terms = "冬至 小寒 大寒"; dunLabel = "陽遁"; bgClass = "bg-red-900/40"; }
+                            if (num === 6) { terms = "立冬 小雪 大雪"; dunLabel = "陰遁"; bgClass = "bg-blue-900/40"; }
+
+                            if (isCurrent) {
+                                bgClass = "bg-yellow-600/60";
+                            }
+
+                            const containerClass = `palace-${num} ${bgClass} rounded-lg p-1.5 flex flex-col items-center justify-center text-center aspect-square shadow transition-all relative ` + 
+                                (isCurrent ? "border-2 border-qimen-gold ring-2 ring-qimen-gold/30 z-10" : "border border-gray-700");
+
+                            return (
+                                <div key={num} className={containerClass}>
+                                    {isCurrent && (
+                                        <div className="absolute -top-1.5 -right-1.5 bg-qimen-gold text-qimen-dark text-[9px] font-bold px-1 rounded shadow">
+                                            📍 目前
+                                        </div>
+                                    )}
+                                    <span className="text-gray-300 font-bold text-[11px] mb-0.5">{BAGUA_DATA[num].name.split(' ')[0]}</span>
+                                    {num !== 5 && (
+                                        <>
+                                            <span className={`text-[9px] font-bold px-1 rounded mb-0.5 ${isCurrent ? 'bg-yellow-900/80 text-yellow-200' : isYang ? 'bg-red-500/20 text-red-300' : 'bg-blue-500/20 text-blue-300'}`}>
+                                                {dunLabel}
+                                            </span>
+                                            <span className={`text-[9px] leading-tight ${isCurrent ? 'text-white font-bold' : 'text-gray-300'}`}>
+                                                {terms.split(' ').map((t, i) => (
+                                                    <span key={i} className={`block ${t === currentInfo.term ? 'text-qimen-gold font-black scale-105' : ''}`}>{t}</span>
+                                                ))}
+                                            </span>
+                                        </>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        const CompassTab = () => {
+            const [selectedSector, setSelectedSector] = React.useState(null);
+
+            return (
+                <div className="space-y-4 animate-fade-in pb-6">
+                    <div className="glass-panel p-4 rounded-xl border-t-4 border-emerald-500 space-y-3">
+                        <h3 className="text-base font-serif font-bold text-white flex items-center">
+                            <span>🧭 陽宅九宮佈局指引</span>
+                        </h3>
+                        <p className="text-xs text-gray-400">
+                            點擊下方九宮格方位，查看該空間的風水象意與催旺佈局。
+                        </p>
+
+                        <div className="bg-blue-900/20 border border-blue-800/50 p-3 rounded-lg text-xs text-blue-200 space-y-1.5">
+                            <strong className="text-blue-300 block font-bold">🧭 如何正確測量方位？ (中心立極法)</strong>
+                            <p>1. <strong>找中心點</strong>：站在整間房子或樓層的幾何中心。</p>
+                            <p>2. <strong>現場測量</strong>：打開手機指南針，確認正東正南正西正北。</p>
+                            <p>3. <strong>大門判定</strong>：大門不決定方位，而是被包含在某個方位內（如指南針測出大門在東南，即巽宮）。</p>
+                        </div>
+
+                        <div className="bg-purple-900/20 border border-purple-800/50 p-3 rounded-lg text-xs text-purple-200 space-y-1">
+                            <strong className="text-purple-300 block font-bold">💡 坐向迷思解答：房子坐向需要轉向嗎？</strong>
+                            <p><strong>絕對不需要！</strong> 奇門遁甲使用大自然的「絕對地理方位」（正北坎宮、正南離宮）。您只需站在家裡正中心對應下方九宮格即可。</p>
+                        </div>
+
+                        {/* Layout SVG */}
+                        <div className="bg-qimen-dark p-3 rounded-xl border border-gray-700 flex flex-col items-center">
+                            <span className="text-xs text-qimen-gold font-bold mb-2">🏠 居家九宮平面佈局參考圖 (上南下北)</span>
+                            <svg className="w-full max-w-[280px] aspect-square bg-slate-900 rounded-lg border border-gray-600 text-[10px]" viewBox="0 0 300 300">
+                                <line x1="100" y1="0" x2="100" y2="300" stroke="#475569" strokeDasharray="4 4" />
+                                <line x1="200" y1="0" x2="200" y2="300" stroke="#475569" strokeDasharray="4 4" />
+                                <line x1="0" y1="100" x2="300" y2="100" stroke="#475569" strokeDasharray="4 4" />
+                                <line x1="0" y1="200" x2="300" y2="200" stroke="#475569" strokeDasharray="4 4" />
+                                
+                                <text x="50" y="55" fill="#cbd5e1" textAnchor="middle" fontWeight="bold">巽(東南)</text>
+                                <text x="50" y="70" fill="#94a3b8" textAnchor="middle">長女/文昌</text>
+
+                                <text x="150" y="55" fill="#cbd5e1" textAnchor="middle" fontWeight="bold">離(南)</text>
+                                <text x="150" y="70" fill="#94a3b8" textAnchor="middle">中女/知名度</text>
+
+                                <text x="250" y="55" fill="#cbd5e1" textAnchor="middle" fontWeight="bold">坤(西南)</text>
+                                <text x="250" y="70" fill="#94a3b8" textAnchor="middle">老母/婚姻</text>
+
+                                <text x="50" y="155" fill="#cbd5e1" textAnchor="middle" fontWeight="bold">震(東)</text>
+                                <text x="50" y="170" fill="#94a3b8" textAnchor="middle">長男/健康</text>
+
+                                <text x="150" y="155" fill="#fbbf24" textAnchor="middle" fontWeight="bold">中宮</text>
+                                <text x="150" y="170" fill="#94a3b8" textAnchor="middle">核心樞紐</text>
+
+                                <text x="250" y="155" fill="#cbd5e1" textAnchor="middle" fontWeight="bold">兌(西)</text>
+                                <text x="250" y="170" fill="#94a3b8" textAnchor="middle">少女/偏財</text>
+
+                                <text x="50" y="255" fill="#cbd5e1" textAnchor="middle" fontWeight="bold">艮(東北)</text>
+                                <text x="50" y="270" fill="#94a3b8" textAnchor="middle">少男/守財</text>
+
+                                <text x="150" y="255" fill="#cbd5e1" textAnchor="middle" fontWeight="bold">坎(北)</text>
+                                <text x="150" y="270" fill="#94a3b8" textAnchor="middle">中男/事業</text>
+
+                                <text x="250" y="255" fill="#cbd5e1" textAnchor="middle" fontWeight="bold">乾(西北)</text>
+                                <text x="250" y="270" fill="#94a3b8" textAnchor="middle">老父/權威</text>
+                            </svg>
+                        </div>
+
+                        {/* Interactive Grid */}
+                        <div className="palace-grid">
+                            {[4, 9, 2, 3, 5, 7, 8, 1, 6].map(num => (
+                                <button
+                                    key={num}
+                                    onClick={() => setSelectedSector(num)}
+                                    className={`palace-${num} ${BAGUA_DATA[num].color} bg-opacity-80 hover:bg-opacity-100 border border-gray-600 rounded-lg p-2.5 flex flex-col items-center justify-center text-center aspect-square shadow transition-transform active:scale-95`}
+                                >
+                                    <span className="text-white font-bold text-xs mb-0.5">{BAGUA_DATA[num].name}</span>
+                                    <span className="text-[10px] text-gray-200">{BAGUA_DATA[num].element}行</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <Modal 
+                        isOpen={selectedSector !== null} 
+                        onClose={() => setSelectedSector(null)}
+                        title={selectedSector ? `${BAGUA_DATA[selectedSector].name} 空間佈局指南` : ''}
+                    >
+                        {selectedSector && (
+                            <div className="space-y-3">
+                                <div className="bg-qimen-dark p-2.5 rounded-lg border border-gray-700">
+                                    <span className="text-qimen-gold font-bold block mb-1">🏛️ 宮位象意</span>
+                                    <p className="text-xs text-gray-300">{BAGUA_DATA[selectedSector].zhai}</p>
+                                </div>
+                                <div className="bg-emerald-900/30 border border-emerald-800/50 p-2.5 rounded-lg">
+                                    <span className="text-emerald-400 font-bold block mb-1">✅ 宜佈置 (催旺)</span>
+                                    <p className="text-xs text-gray-300">{BAGUA_DATA[selectedSector].setup}</p>
+                                </div>
+                                <div className="bg-red-900/30 border border-red-800/50 p-2.5 rounded-lg">
+                                    <span className="text-red-400 font-bold block mb-1">❌ 忌擺放 (避煞)</span>
+                                    <p className="text-xs text-gray-300">{BAGUA_DATA[selectedSector].avoid}</p>
+                                </div>
+                            </div>
+                        )}
+                    </Modal>
+                </div>
+            );
+        };
+
+        const StockTab = () => {
+            const [tradeTime, setTradeTime] = React.useState(() => {
+                const now = new Date();
+                return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+            });
+            const [analysis, setAnalysis] = React.useState(null);
+
+            React.useEffect(() => {
+                const dateObj = new Date(tradeTime);
+                if (!isNaN(dateObj.getTime())) {
+                    const res = calculateQiMen(dateObj);
+                    if(res.success) {
+                        let trend = res.dun === '陽' ? '陽遁 (能量生發擴張，市場情緒易偏多頭樂觀)' : '陰遁 (能量收斂內縮，市場易震盪、回調或觀望)';
+                        let trendColor = res.dun === '陽' ? 'text-red-400' : 'text-blue-400';
+                        
+                        let timeSignal = '中性 (依基本面與技術面為主，無特殊干擾)';
+                        let signalColor = 'text-yellow-400';
+                        
+                        const yi = res.timeYi || '';
+                        const ji = res.timeJi || '';
+                        
+                        const isGoodHour = res.goodHours.includes(res.timeZhi + '時');
+                        const hasWealthYi = yi.includes('財') || yi.includes('交易') || yi.includes('市') || yi.includes('納財');
+                        const hasWealthJi = ji.includes('財') || ji.includes('交易') || ji.includes('市') || ji.includes('諸事不宜') || ji.includes('破');
+
+                        if (hasWealthJi) {
+                            timeSignal = '⚠️ 煞氣重 / 不宜求財 (情緒易躁進，追高風險大，宜觀望)';
+                            signalColor = 'text-red-400';
+                        } else if (hasWealthYi) {
+                            timeSignal = '💰 大吉時 / 財星旺 (思路清晰，利於執行既定策略)';
+                            signalColor = 'text-emerald-400';
+                        } else if (isGoodHour) {
+                            timeSignal = '✨ 小吉時 / 平順 (無特別干擾，可依紀律操作)';
+                            signalColor = 'text-emerald-300';
+                        }
+
+                        let action = '謹慎觀望 / 嚴控水位';
+                        let actionColor = 'bg-yellow-900/40 border-yellow-500/50 text-yellow-300';
+                        
+                        if (hasWealthJi) {
+                            action = '空手觀望 / 暫緩進場';
+                            actionColor = 'bg-red-900/40 border-red-500/50 text-red-300';
+                        } else if ((res.dun === '陽' && (hasWealthYi || isGoodHour))) {
+                            action = '順勢佈局 (多方思維)';
+                            actionColor = 'bg-emerald-900/40 border-emerald-800/50 text-emerald-300';
+                        } else if ((res.dun === '陰' && (hasWealthYi || isGoodHour))) {
+                            action = '小量試單 / 短線為宜';
+                            actionColor = 'bg-blue-900/40 border-blue-800/50 text-blue-300';
+                        }
+
+                        setAnalysis({
+                            ...res,
+                            trend, trendColor,
+                            timeSignal, signalColor,
+                            action, actionColor
+                        });
+                    }
+                }
+            }, [tradeTime]);
+
+            return (
+                <div className="space-y-4 animate-fade-in pb-6">
+                    <div className="glass-panel p-4 rounded-xl border-t-4 border-qimen-gold space-y-3">
+                        <h3 className="text-base font-serif font-bold text-white flex items-center">
+                            <span>📈 股市決策輔助引擎</span>
+                        </h3>
+                        <p className="text-xs text-gray-400">
+                            輸入下單或盯盤時間，解析當時時空能量，作為投資情緒輔助。
+                        </p>
+                        <input 
+                            type="datetime-local" 
+                            value={tradeTime}
+                            onChange={(e) => setTradeTime(e.target.value)}
+                            className="w-full bg-qimen-dark border border-gray-600 rounded-lg p-3 text-white text-sm focus:outline-none focus:border-qimen-gold"
+                        />
+                    </div>
+
+                    {analysis && (
+                        <div className="space-y-3">
+                            <div className={`p-4 rounded-xl border ${analysis.actionColor} flex flex-col items-center justify-center text-center shadow`}>
+                                <span className="text-[11px] opacity-80 mb-1">AI 綜合運算建議</span>
+                                <span className="text-xl font-bold font-serif tracking-wide">{analysis.action}</span>
+                            </div>
+
+                            <div className="glass-panel p-4 rounded-xl space-y-3 text-xs">
+                                <div>
+                                    <span className="text-gray-500 block mb-0.5">【大環境】週期能量 ({analysis.dun}遁 {analysis.ju}局)</span>
+                                    <div className={`font-medium ${analysis.trendColor}`}>
+                                        {analysis.trend}
+                                    </div>
+                                </div>
+                                
+                                <div className="border-t border-gray-700 pt-3">
+                                    <span className="text-gray-500 block mb-0.5">【微觀】時辰判斷 ({analysis.timeGanZhi}時)</span>
+                                    <div className={`font-medium ${analysis.signalColor}`}>
+                                        {analysis.timeSignal}
+                                    </div>
+                                </div>
+
+                                <div className="border-t border-gray-700 pt-3">
+                                    <span className="text-gray-500 block mb-1">【空間借氣】下單朝向方位</span>
+                                    <div className="flex items-center bg-orange-900/30 border border-orange-800/50 p-2.5 rounded-lg">
+                                        <div className="text-2xl mr-3">🧭</div>
+                                        <div>
+                                            <div className="text-orange-400 font-bold">面向【{analysis.dirCai}】方</div>
+                                            <div className="text-[11px] text-gray-300 mt-0.5">下單時面向財神方，有助於穩定決策情緒。</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-2.5 bg-red-900/20 border border-red-800/30 rounded-lg text-[11px] text-gray-400">
+                                ⚠️ 聲明：時空能量僅供心理與策略參考，投資理財請以基本面與技術面為核心，盈虧自負。
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [activeTab, setActiveTab] = React.useState('guide');
+
+            return (
+                <div className="max-w-md mx-auto min-h-screen flex flex-col p-3 sm:p-5">
+                    <header className="mb-4 text-center">
+                        <div className="flex justify-center items-center gap-1.5 mb-3">
+                            <span className="text-[11px] text-gray-400 bg-gray-800/70 px-2.5 py-1 rounded-full border border-gray-700 flex items-center">
+                                <span className="mr-1 text-qimen-gold">📍</span> 
+                                位置：<span className="text-gray-200 ml-1">高雄市路竹區</span>
+                            </span>
+                        </div>
+                        <h1 className="text-xl font-serif font-bold text-white tracking-wide">奇門遁甲</h1>
+                        <p className="text-qimen-gold/80 text-xs mt-0.5">從二十四節氣掌握時空律動</p>
+                    </header>
+
+                    <nav className="grid grid-cols-5 gap-1 rounded-xl bg-qimen-dark p-1 border border-gray-800 mb-4 shadow-inner">
+                        <button 
+                            onClick={() => setActiveTab('guide')}
+                            className={`text-[11px] py-2 px-1 rounded-lg transition-all ${activeTab === 'guide' ? 'bg-qimen-panel text-white font-bold shadow' : 'text-gray-400'}`}
+                        >
+                            指南
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('calc')}
+                            className={`text-[11px] py-2 px-1 rounded-lg transition-all ${activeTab === 'calc' ? 'bg-qimen-panel text-white font-bold shadow' : 'text-gray-400'}`}
+                        >
+                            起局
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('theory')}
+                            className={`text-[11px] py-2 px-1 rounded-lg transition-all ${activeTab === 'theory' ? 'bg-qimen-panel text-white font-bold shadow' : 'text-gray-400'}`}
+                        >
+                            時空
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('compass')}
+                            className={`text-[11px] py-2 px-1 rounded-lg transition-all ${activeTab === 'compass' ? 'bg-qimen-panel text-white font-bold shadow' : 'text-gray-400'}`}
+                        >
+                            陽宅
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('stock')}
+                            className={`text-[11px] py-2 px-1 rounded-lg transition-all ${activeTab === 'stock' ? 'bg-emerald-900/70 text-emerald-300 font-bold shadow' : 'text-emerald-500/70'}`}
+                        >
+                            股市
+                        </button>
+                    </nav>
+
+                    <main className="flex-grow">
+                        {activeTab === 'guide' && <GuideTab />}
+                        {activeTab === 'calc' && <CalculatorTab />}
+                        {activeTab === 'theory' && <TheoryTab />}
+                        {activeTab === 'compass' && <CompassTab />}
+                        {activeTab === 'stock' && <StockTab />}
+                    </main>
+
+                    <footer className="mt-4 text-center text-[10px] text-gray-500 pb-2">
+                        資訊架構師藍圖行動版建構
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
